@@ -103,7 +103,7 @@ python -c "from datasets import load_dataset; load_dataset('openai/openai_humane
 - Visit: https://huggingface.co/meta-llama/Llama-3.1-405B
 - Click "Request access"
 - Fill out the application form
-- Wait for approval (usually 1-3 days)
+- Wait for approval (usually 2 hours)
 
 **Alibaba Qwen Models**:
 - Visit: https://huggingface.co/Qwen/Qwen2.5-72B-Instruct

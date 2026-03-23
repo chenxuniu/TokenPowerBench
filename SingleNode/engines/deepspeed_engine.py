@@ -158,7 +158,7 @@ class DeepSpeedEngine:
                 # Generate with DeepSpeed
                 with torch.no_grad():
                     try:
-                        # 使用generate方法
+                        # Use the generate method
                         outputs = self.engine.generate(
                             inputs=input_ids,
                             attention_mask=attention_mask,
@@ -186,7 +186,7 @@ class DeepSpeedEngine:
                     except Exception as e:
                         print(f"Generate method error: {e}")
                         try:
-                            # 尝试使用forward方法
+                            # Fall back to forward pass
                             outputs = self.engine(
                                 input_ids=input_ids,
                                 attention_mask=attention_mask,
@@ -195,7 +195,7 @@ class DeepSpeedEngine:
                                 eos_token_id=self.tokenizer.eos_token_id
                             )
                             
-                            # 处理输出
+                            # Process output logits
                             if isinstance(outputs, dict) and 'logits' in outputs:
                                 logits = outputs['logits']
                                 predicted_tokens = torch.argmax(logits[:, -1, :], dim=-1)

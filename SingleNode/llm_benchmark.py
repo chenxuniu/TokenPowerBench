@@ -87,7 +87,7 @@ def run_benchmark(engine_type, models, batch_sizes, num_samples, output_tokens, 
         # Initialize power monitor
         power_monitor = PowerMonitor()
         
-        # Setup model - 使用本地模型路径
+        # Setup model - use local model path
         base_path = os.path.join('/data/huggingface', model)
         model_path = None
         

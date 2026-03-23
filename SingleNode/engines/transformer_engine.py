@@ -80,7 +80,7 @@ class TransformerEngine:
                 device_map=device_map
             )
             
-            # 确保pipeline的tokenizer也设置了pad_token
+            # Ensure the pipeline's tokenizer also has pad_token set
             self.pipeline.tokenizer.pad_token = self.tokenizer.pad_token
             self.pipeline.tokenizer.pad_token_id = self.tokenizer.pad_token_id
             

@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "tokenpowerbench"
+version = "0.2.0"
+description = "GPU energy benchmarking for LLM inference (TokenPowerBench, AAAI 2026)"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0.0",
+    "transformers>=4.30.0",
+    "datasets>=2.0.0",
+    "nvidia-ml-py>=12.0.0",   # pynvml — GPU power via NVML (no root required)
+    "numpy>=1.24.0",
+    "packaging>=21.0",
+]
+
+[project.optional-dependencies]
+vllm = ["vllm>=0.6.0"]
+distributed = [
+    "vllm>=0.6.0",
+    "ray[data]>=2.22.0",
+]
+deepspeed = ["deepspeed>=0.10.0"]
+trtllm = ["tensorrt-llm>=0.7.0"]
+all = [
+    "vllm>=0.6.0",
+    "ray[data]>=2.22.0",
+    "deepspeed>=0.10.0",
+]
+
+[project.scripts]
+tpbench-single = "run_single_node:run"
+tpbench-multi  = "run_multi_node:run"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tokenpowerbench*"]

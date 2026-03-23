@@ -88,7 +88,7 @@ try:
         
 except (ImportError, Exception) as e:
     print(f"Error loading Alpaca dataset: {e}")
-    # 回退到原始提示
+    # Fall back to built-in prompts
     LONG_PROMPTS = [
         "Discuss the potential of brain-computer interfaces (BCIs) in transforming human-computer interaction...",
         "Analyze the evolution and impact of cybersecurity threats in the digital age...",
