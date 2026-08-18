@@ -1,3 +1,5 @@
+
+
 # TokenPowerBench Benchmark
 
 A comprehensive benchmark suite for measuring energy consumption and performance of large language models across different inference engines and distributed configurations.
@@ -153,7 +155,7 @@ snapshot_download(
 
 **Core Dependencies**:
 ```bash
-python >= 3.9
+python >= 3.10
 torch >= 2.0.0
 transformers >= 4.30.0
 datasets >= 2.10.0
