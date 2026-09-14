@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import importlib.util
+import gc
 import math
+import sys
 import time
 import uuid
 from typing import Any, List, Optional, Tuple
@@ -83,6 +85,41 @@ class VLLMEngine(InferenceEngine):
         self._seed = seed
         self._temperature = temperature
         return self._llm
+
+    def close(self) -> None:
+        """Shut down the vLLM engine core and release this wrapper's references.
+
+        V1 exposes synchronous shutdown on its engine-core client. V0 uses
+        model_executor.shutdown(), also called by its LLMEngine destructor.
+        Both paths are inspected against vLLM 0.10.1.1. Collection after
+        shutdown releases in-process model references before emptying any
+        initialized CUDA allocator cache.
+        """
+        llm = self._llm
+        if llm is None:
+            return
+        self._llm = None
+        engine = getattr(llm, "llm_engine", None)
+        core = getattr(engine, "engine_core", None)
+        shutdown = getattr(core, "shutdown", None)
+        executor = None
+        if not callable(shutdown):
+            executor = getattr(engine, "model_executor", None)
+            shutdown = getattr(executor, "shutdown", None)
+        try:
+            if not callable(shutdown):
+                raise RuntimeError("This vLLM engine exposes neither engine_core.shutdown() nor model_executor.shutdown()")
+            shutdown()
+        finally:
+            if executor is not None:
+                # Its destructor calls the same method; avoid a second shutdown.
+                engine.model_executor = None
+            llm = engine = core = executor = shutdown = None
+            gc.collect()
+            cuda = getattr(sys.modules.get("torch"), "cuda", None)
+            is_initialized = getattr(cuda, "is_initialized", None)
+            if callable(is_initialized) and is_initialized():
+                cuda.empty_cache()
 
     def _sampling_params(
         self, max_tokens: int, temperature: Optional[float] = None, *, profile: bool = False

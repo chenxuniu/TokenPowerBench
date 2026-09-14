@@ -1,7 +1,8 @@
-"""TokenPowerBench: explicit-scope inference energy and host phase profiling.
+"""Measure LLM inference energy with explicit sensor scope and phase windows."""
 
-Use run_single_node.py or tpbench-single; see docs/measurement.md for sensor
-permissions, phase timing definitions, and temporal resolution limits.
-"""
+__version__ = "1.0.0"
 
-__version__ = "0.3.0"
+from .api import BenchmarkResult, benchmark, check_environment
+from .energy import EnergyMetrics, create_monitor
+
+__all__ = ["benchmark", "check_environment", "BenchmarkResult", "create_monitor", "EnergyMetrics", "__version__"]

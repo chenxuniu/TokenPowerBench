@@ -1,194 +1,42 @@
-# GH200 functional validation
+# GH200 environment and measurements
 
-Validation date: **2026-09-14 UTC**. These checks exercise process identity,
-sensor permissions, real vLLM first-token events, and energy integration. Their
-workloads and results do **not** reproduce the paper's figures.
+TokenPowerBench supports single-node vLLM inference on GH200 through the
+container configuration below. The reference measurements dated **2026-09-14 UTC**
+exercise GPU and node monitoring, process permissions, first-token timing, and
+ordinary batching. They use functional workloads and do not reproduce the paper's
+numerical results.
 
 ## Environment
 
-| Item | Observed configuration |
+| Item | Configuration |
 | --- | --- |
-| GPU used | One NVIDIA GH200 144G HBM3e; GPU 0 selected from a two-GPU node |
-| CPU architecture | NVIDIA Grace, ARM/aarch64; no Intel RAPL interface |
+| GPU selection | GPU 0: NVIDIA GH200 144G HBM3e, selected from a two-GPU node |
+| CPU | NVIDIA Grace, ARM/aarch64; Intel RAPL unavailable |
 | NVIDIA driver | `580.173.02` |
-| Base image | `nvcr.io/nvidia/vllm:25.09-py3` |
-| Image additions | `ipmitool`, through [`docker/Dockerfile.gh200`](../docker/Dockerfile.gh200) |
+| NVIDIA base image | `nvcr.io/nvidia/vllm:25.09-py3` |
+| Package image | [`docker/Dockerfile.gh200`](../docker/Dockerfile.gh200): TokenPowerBench and `ipmitool` |
 | PyTorch | `2.9.0a0+50eac811a6.nv25.9` |
 | vLLM | `0.10.1.1+381074ae.nv25.9.cu130` |
-| Models | Local Qwen2.5-0.5B-Instruct and Qwen2.5-7B-Instruct weights |
+| Qwen2.5-0.5B-Instruct revision | `7ae557604adf67be50417f59c2c2f167def9a775` |
+| Qwen2.5-7B-Instruct revision | `a09a35458c702b33eeacc393d103063234e8bc28` |
 
-The downloaded model metadata records revisions
-`7ae557604adf67be50417f59c2c2f167def9a775` for `Qwen/Qwen2.5-0.5B-Instruct` and
-`a09a35458c702b33eeacc393d103063234e8bc28` for `Qwen/Qwen2.5-7B-Instruct`.
-See [model preparation](reproducing.md) for pinned downloads.
-
-Only the selected GPU is included in GPU energy. IPMI reports the whole node,
-including components beyond that GPU. The node's two-GPU topology therefore
-matters when comparing these scopes.
-
-## Completed checks
-
-`--check-monitor` printed process identity before attempting sensor access.
-The local IPMI device was owned by root with mode `0600`; the non-root failure
-was a real device-permission failure. Passing `/dev/ipmi0` into the container
-was sufficient for root IPMI access; `--privileged` was not required.
-
-| Process / mode | Exit code | Observed result |
-| --- | --- | --- |
-| Non-root, `--check-monitor --monitor auto` | `0` | GPU available; IPMI unavailable; Intel RAPL unavailable |
-| Non-root, `--check-monitor --monitor full_node` | `1` | Expected explicit failure because IPMI was unreadable |
-| Root, `--check-monitor --monitor full_node` | `0` | IPMI available; CPU/DRAM still unavailable because Intel RAPL is absent |
-
-This confirms that `is_root` and sensor availability are independent:
-`full_node` requires IPMI, while CPU/DRAM RAPL measurements remain optional.
-The absence of Intel RAPL on Grace is not corrected by root permissions.
-
-A real **non-root, GPU-only phase run** completed three serial Qwen2.5-0.5B-Instruct
-requests. The saved runtime reported `is_root: false`.
-
-| Quantity | Observed value |
-| --- | --- |
-| Requests completed | `3` |
-| Total generated tokens | `1536` |
-| Measured run duration | `9.908 s` |
-| Selected-GPU energy over the measured run | `1563.68 J` |
-| TTFT / prefill proxy, request order | `28.1 ms`, `48.4 ms`, `30.0 ms` |
-| Decode duration, request order | `3.245 s`, `3.406 s`, `3.150 s` |
-| Prefill GPU energy | `null` for every request, as expected for these short windows |
-
-The first-token observations preceded completion and separated the serial
-requests' prefill proxy and decode windows. TTFT and prefill proxy both span
-`submitted_s` to `first_token_s`. `dispatch_completed_s` is an auxiliary host
-event, not a GPU execution-start measurement. Values above are rounded; the
-saved JSON events and raw samples retain greater precision.
-
-The installed vLLM enabled chunked prefill despite the request to disable it:
-
-| Setting | Requested | Effective |
-| --- | --- | --- |
-| `enable_chunked_prefill` | `false` | `true` |
-| `enable_prefix_caching` | `false` | `false` |
-| `max_num_seqs` | `1` | `1` |
-
-`engine_config.json` records both configurations and the engine class. The
-runner finished each request before submitting the next, so chunking did not
-introduce overlap between different requests' phases. These observations still
-describe host windows, including queueing and host overhead; they do not
-identify exact GPU kernel boundaries.
-
-## Completed root run and trace audit
-
-The root `full_node` phase run completed with Qwen2.5-7B-Instruct and long
-inputs. The saved runtime reported `is_root: true`; IPMI was available and
-Intel RAPL CPU/DRAM metrics remained `null`.
-
-| Quantity | Observed value |
-| --- | --- |
-| Requests completed | `3` |
-| Input tokens per request | `30035` |
-| Output tokens per request / total | `512` / `1536` |
-| Measured run duration | `13.819793 s` |
-| Selected-GPU energy | `6604.168904 J` |
-| Integrated IPMI node reading | `7117.193194 J` |
-
-| Request | TTFT / prefill proxy (s) | GPU prefill estimate (J) | Decode (s) | GPU decode estimate (J) | IPMI samples inside prefill |
-| --- | --- | --- | --- | --- | --- |
-| 1 | `1.024868` | `577.871339` | `3.573980` | `1640.632151` | `0` |
-| 2 | `1.032839` | `548.751090` | `3.546484` | `1633.389224` | `1` |
-| 3 | `1.034173` | `547.950077` | `3.606620` | `1655.213967` | `1` |
-
-An independent audit of the saved root-run trace and reported integrals
-passed, with maximum absolute energy difference **`1.82e-12 J`**. This verifies
-the arithmetic on the recorded readings, not the physical sensor's ability to
-resolve a phase boundary.
-
-All **15 IPMI readings across 13.906 seconds were exactly 515 W**, while the
-selected GPU's reported power ranged from **395.910 to 679.596 W**. The IPMI
-prefill sample counts were `0`, `1`, and `1`, below the required two readings;
-all three prefill node-energy values correctly remained `null`. The valid
-whole-run IPMI integral is therefore the integral of a constant returned
-reading. It does not demonstrate a measured physical difference between node
-prefill and decode power.
-
-The approximately 1.03-second prefill windows passed the GPU monitor's
-minimum-duration and sample-coverage checks, so GPU energy values were
-reported. They remain heavily affected by NVML's approximately one-second
-averaging window: the reported prefill/decode estimates cannot establish a
-sharp physical GPU power transition either. Temporal resolution is a separate
-limitation from correct timestamps and integration.
-
-## Completed ordinary batch and monitor-reuse check
-
-A non-root GPU-only Qwen2.5-0.5B-Instruct run completed batch sizes 1 and 2
-sequentially in the same process:
-
-| Batch size | Responses | Output tokens | Duration (s) | GPU energy (J) | Raw / in-window GPU samples |
-| --- | --- | --- | --- | --- | --- |
-| 1 | `4` | `2048` | `15.334865` | `2392.069863` | `155` / `153` |
-| 2 | `4` | `2048` | `6.917567` | `1099.098412` | `71` / `69` |
-
-An independent recomputation used explicit endpoint interpolation followed by
-trapezoids over the clipped raw trace, without calling the production
-integrator. The absolute differences were `1.364e-12 J` and `0 J` for batch
-sizes 1 and 2 respectively. Each trace had finite, strictly increasing
-timestamps; the second trace started after the first ended and contained no
-retained samples from the earlier batch. Neither batch reported NVML sampling
-errors.
-
-Both batch results retained `phase_status: "not_requested"` and an empty
-`phases` list. CPU, DRAM, node, and total-node energy stayed `null`; the scope
-was `selected_gpus`. These checks confirm monitor reuse and scope handling for
-this tested configuration.
-
-## Completed IPMI diagnostics follow-up
-
-The final sampler retains complete DCMI responses, including the BMC timestamp,
-statistics period, and reading state. A further root Qwen2.5-0.5B-Instruct phase
-run exercised this code with **20 requests / 10240 output tokens** over
-**74.896266 seconds**. It reported **11744.381971 J** from the selected GPU and
-**39356.756111 J** from IPMI.
-
-Independent integration of all 750 GPU and 76 IPMI samples reproduced the
-whole-run and all 20 decode-window estimates. The maximum absolute difference
-was `1.46e-11 J` for GPU energy and `0 J` for IPMI energy.
-
-All 76 IPMI responses succeeded and reported an activated reading state. Their
-BMC timestamps advanced by one second on each query; the median host polling
-interval was **0.999985 seconds**. The returned instantaneous power nevertheless
-had only two values: 517 W for 33 readings, then 532 W for 43 readings. The
-statistics period was retained as reported, without treating it as the power
-sensor's refresh period. This trace does not establish the physical sensor's
-refresh or averaging behavior.
-
-The 20 short prefill windows retained timestamps and null energy. Nineteen
-decode windows had identical IPMI readings throughout their coverage and
-correctly received the new constant-reading warning; the remaining window
-crossed the change in the returned power. Numeric integrals remain estimates
-over the returned readings, with these diagnostics attached.
-
-## Validation boundaries
-
-The completed runs and independent integration audits establish functional
-behavior. No physical node-level prefill/decode power difference has been
-validated. Intel RAPL hardware behavior remains untested on this ARM machine,
-and equivalence to exact GPU kernel-profiler boundaries remains unvalidated.
-All 75 automated tests passed locally and in the GH200 container. The Python
-wheel built successfully and its installed single-node command was checked
-outside the source checkout. The test containers exited and both GPUs returned
-to zero allocated memory after validation.
+The image installs the Python package while preserving the supplied NVIDIA
+inference dependencies. GPU metrics cover the selected device; IPMI covers the
+whole node, including the second GPU and other components. Intel RAPL CPU/DRAM
+metrics are unavailable on Grace, including under root.
 
 ## Repeating the checks
 
-The following Bash recipe uses a task-specific validation directory containing
-`code/` (this checkout), `models/` (local model directories), and `prompts.json`
-(a JSON array of prompt strings). Install the NVIDIA container runtime on the
-host and use an account authorized to run Docker. Local model weights must
-already be present. Replace the validation-directory placeholder with your own
-path.
+Use Linux with the NVIDIA container runtime and an account authorized to run
+Docker. Prepare a directory containing `code/` (the package source), `models/`
+(pinned local snapshots), and `prompts.json`. The
+[reproduction guide](reproducing.md#3-download-a-fixed-model-revision) provides
+model downloads and this directory layout. Run the following in Bash, replacing
+the directory placeholder:
 
 ```bash
 TPB_VALIDATION=/path/to/tokenpowerbench-validation
-TPB_IMAGE=tokenpowerbench-gh200:25.09
+TPB_IMAGE=tokenpowerbench:1.0.0-gh200
 TPB_UID="$(id -u)"
 TPB_GID="$(id -g)"
 TPB_USER_HOME="$(getent passwd "$TPB_UID" | cut -d: -f6)"
@@ -205,9 +53,10 @@ sudo docker build \
   -t "$TPB_IMAGE" "$TPB_VALIDATION/code"
 ```
 
-The helper below switches the **container process** between the current user's
-numeric UID/GID and root. `sudo docker` grants access to the Docker daemon;
-`--user` determines the identity recorded by the benchmark.
+The helper runs the installed library from `/results` without mounting source
+code. `sudo docker` provides daemon access; `--user` determines the benchmark
+process's identity. The host passwd/group entries and separate writable home/cache
+mounts support Python user lookup and inference compilation caches.
 
 ```bash
 tpb_run() {
@@ -233,19 +82,17 @@ tpb_run() {
     -v /etc/passwd:/etc/passwd:ro \
     -v /etc/group:/etc/group:ro \
     -v "$tpb_home_mount:$tpb_user_home" \
-    -v "$TPB_VALIDATION/code:/workspace:ro" \
     -v "$TPB_VALIDATION/models:/models:ro" \
     -v "$TPB_VALIDATION/prompts.json:/inputs/prompts.json:ro" \
     -v "$TPB_VALIDATION/results:/results" \
     -v "$TPB_VALIDATION/cache/$tpb_mode:/cache" \
-    -e CUDA_VISIBLE_DEVICES=0 \
-    -e HF_HUB_OFFLINE=1 \
+    -e CUDA_VISIBLE_DEVICES=0 -e HF_HUB_OFFLINE=1 \
     -e XDG_CACHE_HOME=/cache/xdg \
     -e TORCHINDUCTOR_CACHE_DIR=/cache/torchinductor \
     -e TRITON_CACHE_DIR=/cache/triton \
     -e VLLM_CACHE_ROOT=/cache/vllm \
     -e HF_HOME=/cache/huggingface \
-    --workdir /workspace "$TPB_IMAGE" run_single_node.py "$@"
+    --workdir /results --entrypoint python "$TPB_IMAGE" -m tokenpowerbench "$@"
 }
 
 tpb_run nonroot --check-monitor --monitor auto
@@ -253,23 +100,26 @@ tpb_run nonroot --check-monitor --monitor full_node
 tpb_run root --check-monitor --monitor full_node
 ```
 
-The middle command is expected to return exit code `1` on the tested device's
-permissions. Run the matrix interactively, or account for that expected failure
-in a script using `set -e`. On a different server, delegated device permissions
-may allow the non-root `full_node` check to succeed. If the host has no
-`/dev/ipmi0`, omit its device mapping for a GPU-only check; that does not create
-IPMI availability.
+The helper maps only a dedicated writable directory at each process's home path;
+it does not mount the host user's actual home. Root and non-root caches remain
+separate. Keep compilation-cache mount paths stable: cached kernels can contain
+absolute paths. Use a fresh cache directory when changing container mount paths
+or the inference software stack. If `/dev/ipmi0` is absent, omit that device mapping for GPU-only use.
+Host sensor permissions still apply inside the container; `--privileged` is not
+required for this setup.
 
-The passwd/group and writable-home mounts address two problems encountered
-during validation: a bare numeric container UID without a passwd entry caused
-PyTorch's user lookup to fail, and FlashInfer needed a writable user home.
-The helper mounts only a dedicated empty directory at the passwd-resolved home
-path; it does not mount the host user's actual home. Non-root and root caches
-are kept in separate task directories. No `HOME` environment override is used.
+| Process / monitor | Reference exit code | Sensor result |
+| --- | --- | --- |
+| Non-root / `auto` | `0` | GPU available; IPMI and Intel RAPL unavailable |
+| Non-root / `full_node` | `1` | IPMI device unreadable |
+| Root / `full_node` | `0` | IPMI available; Intel RAPL unavailable |
 
-The small-model phase and batch checks used the two raw inputs in
-[`examples/prompts.json`](../examples/prompts.json), copied during setup above.
-The runner repeats them in order to reach `--num-samples`.
+The reference IPMI device had mode `0600` and was owned by root. A non-root
+account with delegated access may instead pass `full_node`. Account for an
+expected permission failure when running these checks in a script with `set -e`.
+
+The example prompts are the two raw strings in
+[`examples/prompts.json`](../examples/prompts.json). For serial phase profiling:
 
 ```bash
 tpb_run nonroot \
@@ -278,32 +128,135 @@ tpb_run nonroot \
   --monitor gpu_only --phase-profiling --batch-sizes 1 \
   --num-samples 3 --output-tokens 512 \
   --max-model-len 4096 --tensor-parallel-size 1 \
-  --gpu-memory-utilization 0.2 \
-  --seed 42 --temperature 0 \
+  --gpu-memory-utilization 0.2 --seed 42 --temperature 0 \
   --output-dir /results/nonroot-phases
 ```
 
-These prompts are a functional smoke workload, not the paper's workload.
-The output-token limit is a maximum:
-early stopping can produce fewer than 512 tokens. Read actual token-ID counts
-from the results. Short prefill windows should retain their timing and return
-`null` GPU/IPMI phase energy under the documented resolution policy.
+For ordinary batching, omit `--phase-profiling`, use
+`--batch-sizes 1,2 --num-samples 4`, and choose a separate output directory.
+For node measurements, use `tpb_run root` and `--monitor full_node`. CPU/DRAM
+remain `null` on Grace. The output-token limit is a maximum; report actual counts.
 
-To check ordinary batching, omit `--phase-profiling` and use
-`--batch-sizes 1,2 --num-samples 4`, with a separate output directory. To check
-whole-node monitoring, launch the helper as `root` and use
-`--monitor full_node`; Intel RAPL CPU/DRAM values should remain `null` on Grace.
-A long-prefill experiment also needs a sufficiently long local prompt and an
-appropriate `--max-model-len`; for the larger model, mount its local weights
-as `/models/Qwen2.5-7B-Instruct`. Changing the prompt or model changes the
-workload and must be recorded. The completed long-prefill run above illustrates
-that a longer window can yield numeric GPU estimates while still leaving node
-prefill energy unavailable.
+## Installed Python library verification
 
-Keep each run's `runtime.json`, `capabilities.json`, `engine_config.json`,
-`environment.json`, `prompts.json`, result JSON, and raw power samples together.
-Before interpreting a phase estimate, verify coverage and recompute its
-integral from the saved trace as described in
-[the measurement contract](measurement.md). Raw artifacts can contain local
-paths, process IDs, and GPU UUIDs; the tables here intentionally report only
-the hardware/software context needed to interpret the checks.
+TokenPowerBench **1.0.0** was installed into the image and imported from Python's
+`dist-packages`, with `/tmp` as the working directory. Inference runs mounted
+models, inputs, results, and caches; they did not mount the package source.
+All 21 installed Python source files matched the corresponding package sources.
+The NVIDIA PyTorch and vLLM versions in the environment table were preserved.
+The installed package passed **93 unit tests** on GH200. A separate clean base
+installation also passed all 93 tests without inference dependencies.
+
+One non-root Python process called `benchmark()` twice: first with serial phase
+profiling, then with batch sizes 1 and 2. Both calls used the two example prompts
+and Qwen2.5-0.5B-Instruct, with maximum model length 4096, memory utilization 0.2,
+seed 42, and temperature 0. A separate root process used the installed
+`tokenpowerbench` command with IPMI monitoring.
+
+| Interface / workload | Requests / output tokens | Duration (s) | GPU energy (J) | IPMI node energy (J) |
+| --- | --- | --- | --- | --- |
+| Python, non-root, serial phases | `2` / `1024` | `6.915274` | `1081.333894` | `null` |
+| Python, non-root, batch 1 | `2` / `256` | `1.972889` | `301.633332` | `null` |
+| Python, non-root, batch 2 | `2` / `256` | `1.047514` | `162.493322` | `null` |
+| CLI, root, serial phases | `2` / `1024` | `7.928388` | `1230.533193` | `4038.019955` |
+
+Each Python call returned with **zero active multiprocessing children**. NVML
+reported 655.0 MiB of device memory used before the calls, 691.4 MiB after the
+first return, and 693.4 MiB after the second. CUDA runtime allocations can remain
+in the calling process after model workers exit. After all containers exited,
+`nvidia-smi` reported 0 MiB and 0% utilization on both GPUs.
+
+The Python phase run recorded TTFT values of **33.1 and 61.2 ms**; the root CLI
+run recorded **29.5 and 49.1 ms**. All four prefill windows retained timing and
+`null` GPU/IPMI energy under the resolution policy. Decode energy was available;
+CPU/DRAM RAPL remained `null` on Grace. The command and module entry points both
+reported version `1.0.0`, and installed runs recorded no unrelated Git revision.
+
+Independent integration of the saved readings matched all 8 numeric GPU windows
+and 3 numeric IPMI windows within **2.28e-13 J**. The root trace contained 81 GPU
+samples and 9 IPMI responses with 8 distinct BMC timestamps; the final boundary
+reading repeated a BMC timestamp. Host samples remained strictly ordered. These
+checks verify saved-window arithmetic and preserve sensor diagnostics; BMC
+timestamps alone do not establish physical power-sensor refresh or phase resolution.
+
+## Reference phase and batch measurements
+
+All runs below used one selected GPU, seed 42, and temperature 0. The small-model
+runs used maximum model length 4096 and memory utilization 0.2. The long-context
+7B run used maximum model length 32768 and memory utilization 0.5.
+
+| Workload | Requests / output tokens | Duration (s) | GPU energy (J) | IPMI node energy (J) |
+| --- | --- | --- | --- | --- |
+| 0.5B, serial, non-root GPU-only | `3` / `1536` | `9.908252` | `1563.680421` | `null` |
+| 7B, serial, root node monitoring | `3` / `1536` | `13.819793` | `6604.168904` | `7117.193194` |
+| 0.5B, serial, root node monitoring | `20` / `10240` | `74.896266` | `11744.381971` | `39356.756111` |
+
+The non-root small-model TTFT values were **28.1, 48.4, and 30.0 ms**, with decode
+durations **3.245, 3.406, and 3.150 s**. All three prefill GPU energy values were
+`null` under the sensor resolution policy. Saved identity was `is_root: false`.
+
+The long-context workload supplied **30035 input tokens per request** and generated
+512 tokens per request. Its host windows and estimates were:
+
+| Request | TTFT / prefill proxy (s) | GPU prefill estimate (J) | Decode (s) | GPU decode estimate (J) | IPMI samples inside prefill |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `1.024868` | `577.871339` | `3.573980` | `1640.632151` | `0` |
+| 2 | `1.032839` | `548.751090` | `3.546484` | `1633.389224` | `1` |
+| 3 | `1.034173` | `547.950077` | `3.606620` | `1655.213967` | `1` |
+
+All three node prefill estimates were `null` because fewer than two IPMI samples
+fell inside each window. All 15 IPMI readings across 13.906 seconds were **515 W**;
+GPU readings ranged from **395.910 to 679.596 W**. These different sensor traces
+cannot establish a physical node-level prefill/decode power transition. The
+approximately one-second GPU prefill windows also remain affected by NVML averaging.
+
+Ordinary GPU-only batching used four requests per batch configuration in one process:
+
+| Batch size | Output tokens | Duration (s) | GPU energy (J) | Raw / in-window GPU samples |
+| --- | --- | --- | --- | --- |
+| 1 | `2048` | `15.334865` | `2392.069863` | `155` / `153` |
+| 2 | `2048` | `6.917567` | `1099.098412` | `71` / `69` |
+
+Both results had an empty `phases` list and `phase_status: "not_requested"`.
+CPU, DRAM, and node energy remained `null`. Each measurement had its own trace,
+strictly increasing timestamps, and no NVML sampling errors.
+
+## Engine configuration and sensor quality
+
+The vLLM configuration for serial phase runs was:
+
+| Setting | Requested | Effective |
+| --- | --- | --- |
+| `enable_chunked_prefill` | `false` | `true` |
+| `enable_prefix_caching` | `false` | `false` |
+| `max_num_seqs` | `1` | `1` |
+
+`engine_config.json` preserves both configurations. Each request finished before
+the next was submitted, so chunking did not overlap different requests' phases.
+TTFT/prefill proxy spans submission to the first host-observed token;
+`dispatch_completed_s` is a diagnostic timestamp rather than GPU execution start.
+These events include scheduling, queueing, and host overhead.
+
+The 20-request node run retained **750 GPU samples and 76 complete IPMI responses**.
+All BMC timestamps were unique and advanced by one second, from 02:10:59 to
+02:12:14 UTC. Median host polling interval was **0.999985 s**. Nevertheless,
+instantaneous IPMI power took only two values: **517 W for 33 readings**, then
+**532 W for 43 readings**. This does not determine physical sensor refresh rate.
+All responses reported an activated reading state. Statistics periods are saved
+as reported and are not treated as instantaneous refresh periods.
+
+All 20 short prefill windows retained timing and null energy. Nineteen decode
+windows contained constant IPMI readings and carried the constant-reading
+warning; one crossed the change in returned power. These numeric values are
+integrals of returned readings with their diagnostics attached.
+
+Independent integration of the raw traces reproduced the long-context totals
+within **1.82e-12 J**, ordinary batch totals within **1.364e-12 J**, and the
+20-request GPU/IPMI totals and decode windows within **1.46e-11 J**. This verifies
+arithmetic, not physical phase resolution. Intel RAPL requires validation on
+compatible hardware; exact GPU kernel boundaries require a profiler.
+
+Keep complete run directories, model/code revisions, package versions or image
+identity, and hardware/sensor configuration together. See
+[measurement definitions](measurement.md) for energy scope, temporal resolution,
+and DCMI interpretation, and [the Python API](api.md) for library usage.

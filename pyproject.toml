@@ -4,34 +4,36 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tokenpowerbench"
-version = "0.3.0"
-description = "GPU energy benchmarking for LLM inference (TokenPowerBench, AAAI 2026)"
+version = "1.0.0"
+description = "Measure LLM inference power, energy, and prefill/decode timing"
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "torch>=2.0.0",
-    "transformers>=4.30.0",
-    "datasets>=2.0.0",
-    "nvidia-ml-py>=12.0.0",   # pynvml — GPU power via NVML (no root required)
-    "numpy>=1.24.0",
-    "packaging>=21.0",
+    "nvidia-ml-py>=12.0.0",
 ]
+keywords = ["LLM", "inference", "energy", "power", "benchmark"]
+
+[project.urls]
+Homepage = "https://github.com/chenxuniu/TokenPowerBench"
+Documentation = "https://github.com/chenxuniu/TokenPowerBench#readme"
+Repository = "https://github.com/chenxuniu/TokenPowerBench"
+Issues = "https://github.com/chenxuniu/TokenPowerBench/issues"
+Paper = "https://doi.org/10.1609/aaai.v40i38.40535"
 
 [project.optional-dependencies]
-vllm = ["vllm>=0.6.0"]
+vllm = ["vllm>=0.10.1,<0.11"]
+datasets = ["datasets>=2.0.0"]
 distributed = [
-    "vllm>=0.6.0",
+    "vllm>=0.10.1,<0.11",
     "ray[data]>=2.22.0",
-]
-deepspeed = ["deepspeed>=0.10.0"]
-trtllm = ["tensorrt-llm>=0.7.0"]
-all = [
-    "vllm>=0.6.0",
-    "ray[data]>=2.22.0",
-    "deepspeed>=0.10.0",
+    "numpy>=1.24.0",
+    "packaging>=21.0",
+    "datasets>=2.0.0",
 ]
 
 [project.scripts]
-tpbench-single = "run_single_node:run"
+tokenpowerbench = "tokenpowerbench.cli:main"
+tpbench-single = "tokenpowerbench.cli:main"
 tpbench-multi  = "run_multi_node:run"
 
 [tool.setuptools.packages.find]

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-import run_single_node as cli
+from tokenpowerbench import api, cli
 from tokenpowerbench.energy import EnergyMetrics
 
 
@@ -34,6 +34,12 @@ class FakeMonitor:
 
 
 class FakeEngine:
+    def __init__(self):
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
     def setup_model(self, *args, **kwargs):
         return self
 
@@ -60,22 +66,22 @@ class SingleNodeTests(unittest.TestCase):
 
     def test_monitor_check_does_not_load_model(self):
         monitor = FakeMonitor()
-        with patch.object(cli, "create_monitor", return_value=monitor), patch.object(cli, "VLLMEngine") as engine, contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(cli.run(["--check-monitor", "--monitor", "gpu_only"]), 0)
+        with patch.object(api, "create_monitor", return_value=monitor), patch.object(api, "VLLMEngine") as engine, contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.main(["--check-monitor", "--monitor", "gpu_only"]), 0)
         engine.assert_not_called()
         self.assertTrue(monitor.closed)
 
     def test_identity_reported_even_if_sensor_initialization_fails(self):
         output = io.StringIO()
-        with patch.object(cli, "runtime_identity", return_value={"euid": 0, "is_root": True}), patch.object(cli, "create_monitor", side_effect=RuntimeError("no GPU")), contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
-            self.assertEqual(cli.run(["--check-monitor"]), 1)
+        with patch.object(cli, "runtime_identity", return_value={"euid": 0, "is_root": True}), patch.object(api, "create_monitor", side_effect=RuntimeError("no GPU")), contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(cli.main(["--check-monitor"]), 1)
         self.assertTrue(json.loads(output.getvalue())["runtime"]["is_root"])
 
     def test_explicit_parallelism_must_match_monitored_devices(self):
         monitor = FakeMonitor()
         monitor.capabilities["gpu"]["devices"] = [{"index": 0}, {"index": 1}]
-        with patch.object(cli, "create_monitor", return_value=monitor), patch.object(cli, "VLLMEngine") as engine, contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            self.assertEqual(cli.run(["--model", "test", "--tensor-parallel-size", "1"]), 1)
+        with patch.object(api, "create_monitor", return_value=monitor), patch.object(api, "VLLMEngine") as engine, contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(cli.main(["--model", "test", "--tensor-parallel-size", "1"]), 1)
         engine.assert_not_called()
         self.assertTrue(monitor.closed)
 
@@ -83,13 +89,13 @@ class SingleNodeTests(unittest.TestCase):
         monitor = FakeMonitor()
         events = [{"request_id": "r1", "submitted_s": 0.0, "dispatch_completed_s": 1.0, "prefill_start_s": 0.0,
                    "first_token_s": 3.0, "finished_s": 8.0, "output_tokens": 6}]
-        cli.phase_results(monitor, events)
+        api.phase_results(monitor, events)
         self.assertEqual(monitor.windows, [(0.0, 3.0, 0), (3.0, 8.0, 5)])
 
     def test_one_token_has_no_decode_energy(self):
         monitor = FakeMonitor()
         events = [{"prefill_start_s": 1.0, "first_token_s": 3.0, "finished_s": 3.0, "output_tokens": 1}]
-        result = cli.phase_results(monitor, events)[0]
+        result = api.phase_results(monitor, events)[0]
         self.assertEqual(result["decode_energy"]["status"], "empty_window")
         self.assertEqual(len(monitor.windows), 1)
 
@@ -99,8 +105,8 @@ class SingleNodeTests(unittest.TestCase):
             base = Path(directory)
             prompts = base / "input.json"
             prompts.write_text('["prompt one", "prompt two"]')
-            with patch.object(cli, "create_monitor", return_value=monitor), patch.object(cli, "VLLMEngine", return_value=engine), patch.object(cli, "environment", return_value={}), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-                self.assertEqual(cli.run(["--model", "model", "--prompts-file", str(prompts), "--num-samples", "3", "--batch-sizes", "2", "--output-dir", directory]), expect_status)
+            with patch.object(api, "create_monitor", return_value=monitor), patch.object(api, "VLLMEngine", return_value=engine), patch.object(api, "environment", return_value={}), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(cli.main(["--model", "model", "--prompts-file", str(prompts), "--num-samples", "3", "--batch-sizes", "2", "--output-dir", directory]), expect_status)
             run_dir = next(base.glob("local_*"))
             payload = {p.name: json.loads(p.read_text()) for p in run_dir.glob("*.json")}
         self.assertTrue(monitor.closed)
@@ -141,10 +147,10 @@ class SingleNodeTests(unittest.TestCase):
                 snapshot.mkdir(parents=True)
                 (snapshot / "config.json").write_text("{}")
             with self.assertRaises(ValueError):
-                cli.resolve_model_path(directory)
+                api.resolve_model_path(directory)
             (root / "refs").mkdir()
             (root / "refs" / "main").write_text("aaa")
-            self.assertEqual(cli.resolve_model_path(directory), str((root / "snapshots" / "aaa").resolve()))
+            self.assertEqual(api.resolve_model_path(directory), str((root / "snapshots" / "aaa").resolve()))
 
     def test_dataset_failure_never_uses_builtin_prompts(self):
         from tokenpowerbench.data import loader

@@ -265,10 +265,16 @@ class EventAndEngineTests(unittest.TestCase):
                 self.assertFalse(engine.resolved_config["requested"]["enable_chunked_prefill"])
 
     def test_import_does_not_require_torch_or_vllm(self):
+        from pathlib import Path
+        import tokenpowerbench
+
+        package_root = str(Path(tokenpowerbench.__file__).resolve().parent.parent)
         result = subprocess.run([
             sys.executable, "-S", "-c",
-            "from tokenpowerbench.engines import VLLMEngine; import sys; "
+            "import sys; sys.path.insert(0, sys.argv[1]); "
+            "from tokenpowerbench.engines import VLLMEngine; "
             "assert 'torch' not in sys.modules; assert 'vllm' not in sys.modules",
+            package_root,
         ], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
