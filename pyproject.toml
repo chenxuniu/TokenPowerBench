@@ -1,10 +1,10 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "tokenpowerbench"
-version = "0.2.0"
+version = "0.3.0"
 description = "GPU energy benchmarking for LLM inference (TokenPowerBench, AAAI 2026)"
 requires-python = ">=3.10"
 dependencies = [
@@ -37,3 +37,6 @@ tpbench-multi  = "run_multi_node:run"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["tokenpowerbench*"]
+
+[tool.setuptools]
+py-modules = ["run_single_node", "run_multi_node"]

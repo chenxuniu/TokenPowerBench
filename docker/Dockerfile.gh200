@@ -1,0 +1,7 @@
+# GH200/aarch64 validation environment. Model weights and source are mounted at run time.
+FROM nvcr.io/nvidia/vllm:25.09-py3
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ipmitool \
+    && rm -rf /var/lib/apt/lists/*
+ENTRYPOINT ["python"]

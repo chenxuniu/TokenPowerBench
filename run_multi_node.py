@@ -159,27 +159,41 @@ def run():
                             engine = VLLMDistributedEngine(cluster, engine_config)
                             monitor = create_monitor(args.monitor)
 
-                            monitor.start()
-                            t0 = time.time()
-                            result = engine.run_benchmark(prompts)
-                            t1 = time.time()
-                            time.sleep(2.0)
-                            monitor.stop()
+                            try:
+                                monitor.start()
+                                try:
+                                    t0 = time.perf_counter()
+                                    result = engine.run_benchmark(prompts)
+                                    t1 = time.perf_counter()
+                                finally:
+                                    monitor.stop()
 
-                            if result is None:
-                                print(f"Benchmark failed for {cfg_key}")
-                                continue
+                                if result is None:
+                                    print(f"Benchmark failed for {cfg_key}")
+                                    continue
 
-                            perf = result["performance_metrics"]
-                            duration = t1 - t0
-                            total_tokens = perf.get("total_tokens", 0)
-                            num_responses = perf.get("total_prompts", len(prompts))
+                                perf = result["performance_metrics"]
+                                duration = t1 - t0
+                                total_tokens = perf.get("total_tokens", 0)
+                                num_responses = perf.get("total_prompts", len(prompts))
 
-                            energy = monitor.compute_metrics(duration, total_tokens, num_responses)
+                                energy = monitor.compute_metrics(
+                                    duration, total_tokens, num_responses,
+                                    start_time=t0, end_time=t1,
+                                )
+                            finally:
+                                monitor.close()
                             print(energy.summary())
 
                             result["energy_metrics"] = {
                                 "monitor_mode": args.monitor,
+                                "monitoring_scope": "local_driver_host",
+                                "energy_scope": energy.energy_scope,
+                                "token_denominator_scope": "all_distributed_responses",
+                                "scope_note": "Energy covers only the driver host, not the Ray cluster.",
+                                "clock": "time.perf_counter",
+                                "start_s": t0,
+                                "end_s": t1,
                                 "duration_s": duration,
                                 "gpu_avg_power_w": energy.gpu_avg_power_w,
                                 "gpu_energy_j": energy.gpu_energy_j,

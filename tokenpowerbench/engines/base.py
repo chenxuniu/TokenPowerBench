@@ -14,7 +14,7 @@ class InferenceEngine(ABC):
 
     @abstractmethod
     def setup_model(self, model_path: str, **kwargs) -> Any:
-        """Load the model. Returns the model object, or None on failure."""
+        """Load the model. Returns the model object; raises on failure."""
 
     @abstractmethod
     def run_inference(
@@ -33,4 +33,4 @@ class InferenceEngine(ABC):
 
     @abstractmethod
     def estimate_tokens(self, outputs: List[Any]) -> int:
-        """Estimate total generated tokens from raw outputs."""
+        """Count total generated token IDs; legacy method name retained."""

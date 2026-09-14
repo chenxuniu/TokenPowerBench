@@ -31,11 +31,11 @@ class DatasetLoader:
     def __init__(self, cache_dir: Optional[str] = None, seed: int = 42) -> None:
         self.cache_dir = cache_dir
         self.seed = seed
-        random.seed(seed)
+        self._random = random.Random(seed)
         if not _HF_AVAILABLE:
             print(
                 "Warning: HuggingFace `datasets` library not installed. "
-                "Falling back to built-in prompts. Run: pip install datasets"
+                "Dataset loading will fail until installed. Run: pip install datasets"
             )
 
     def load(
@@ -90,7 +90,7 @@ class DatasetLoader:
 
     def _alpaca(self, n: int, min_w: int, max_w: int) -> List[str]:
         if not _HF_AVAILABLE:
-            return self._fallback()
+            raise RuntimeError("Alpaca/Dolly dataset unavailable; no synthetic fallback is allowed")
         try:
             ds = hf_load_dataset("tatsu-lab/alpaca", cache_dir=self.cache_dir)
             prompts = []
@@ -103,11 +103,11 @@ class DatasetLoader:
             return self._filter_sample(prompts, n, min_w, max_w, "Alpaca")
         except Exception as exc:
             print(f"[DatasetLoader] Alpaca load failed: {exc}")
-            return self._fallback()
+            raise RuntimeError("Alpaca/Dolly dataset unavailable; no synthetic fallback is allowed")
 
     def _dolly(self, n: int, min_w: int, max_w: int) -> List[str]:
         if not _HF_AVAILABLE:
-            return self._fallback()
+            raise RuntimeError("Alpaca/Dolly dataset unavailable; no synthetic fallback is allowed")
         try:
             ds = hf_load_dataset(
                 "databricks/databricks-dolly-15k", cache_dir=self.cache_dir
@@ -122,11 +122,11 @@ class DatasetLoader:
             return self._filter_sample(prompts, n, min_w, max_w, "Dolly 15K")
         except Exception as exc:
             print(f"[DatasetLoader] Dolly load failed: {exc}")
-            return self._fallback()
+            raise RuntimeError("Alpaca/Dolly dataset unavailable; no synthetic fallback is allowed")
 
     def _longbench(self, n: int, min_w: int, max_w: int) -> List[str]:
         if not _HF_AVAILABLE:
-            return self._longbench_fallback()
+            raise RuntimeError("LongBench dataset unavailable; no synthetic fallback is allowed")
         subtasks = ["narrativeqa", "qasper", "multifieldqa_en", "hotpotqa", "2wikimqa"]
         prompts = []
         for sub in subtasks:
@@ -139,12 +139,12 @@ class DatasetLoader:
             except Exception as exc:
                 print(f"[DatasetLoader] LongBench/{sub} failed: {exc}")
         if not prompts:
-            return self._longbench_fallback()
+            raise RuntimeError("LongBench dataset unavailable; no synthetic fallback is allowed")
         return self._filter_sample(prompts, n, min_w, max_w, "LongBench")
 
     def _humaneval(self, n: int, min_w: int, max_w: int) -> List[str]:
         if not _HF_AVAILABLE:
-            return self._humaneval_fallback()
+            raise RuntimeError("HumanEval dataset unavailable; no synthetic fallback is allowed")
         try:
             ds = hf_load_dataset(
                 "openai/openai_humaneval", cache_dir=self.cache_dir
@@ -157,7 +157,7 @@ class DatasetLoader:
             return self._filter_sample(prompts, n, min_w, max_w, "HumanEval")
         except Exception as exc:
             print(f"[DatasetLoader] HumanEval load failed: {exc}")
-            return self._humaneval_fallback()
+            raise RuntimeError("HumanEval dataset unavailable; no synthetic fallback is allowed")
 
     # ------------------------------------------------------------------
     # Helpers
@@ -172,7 +172,7 @@ class DatasetLoader:
             f"{len(filtered)} after length filter ({min_w}–{max_w} words)"
         )
         if n < len(filtered):
-            sampled = random.sample(filtered, n)
+            sampled = self._random.sample(filtered, n)
             print(f"[DatasetLoader] Sampled {n} from {len(filtered)}")
             return sampled
         print(f"[DatasetLoader] Using all {len(filtered)} prompts")

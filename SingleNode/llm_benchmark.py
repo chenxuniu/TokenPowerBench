@@ -10,10 +10,6 @@ import sys
 from typing import List, Dict, Any
 import os
 from power_monitor import PowerMonitor
-from vllm_engine import VLLMEngine
-from transformer_engine import TransformerEngine
-from deepspeed_engine import DeepSpeedEngine
-from trtllm_engine import TensorRTLLMEngine
 
 try:
     from datasets import load_dataset
@@ -63,16 +59,18 @@ def load_alpaca_dataset(min_length: int = 0, max_length: int = float('inf'), cac
 
         return ["Hello, how are you?", "What is machine learning?", "Explain quantum computing."]
 
-def run_benchmark(engine_type, models, batch_sizes, num_samples, output_tokens, prompts):
+def run_benchmark(engine_type, models, batch_sizes, num_samples, output_tokens, prompts, monitor_mode="auto"):
     """Run benchmarks with specified engine."""
-    engines = {
-        'vllm': VLLMEngine(),
-        'transformers': TransformerEngine(),
-        'deepspeed': DeepSpeedEngine(),
-        'tensorrt_llm': TensorRTLLMEngine()
+    # Import only the selected engine; optional dependencies stay optional.
+    from importlib import import_module
+    modules = {
+        'vllm': ('engines.vllm_engine', 'VLLMEngine'),
+        'transformers': ('engines.transformer_engine', 'TransformerEngine'),
+        'deepspeed': ('engines.deepspeed_engine', 'DeepSpeedEngine'),
+        'tensorrt_llm': ('engines.trtllm_engine', 'TensorRTLLMEngine'),
     }
-    
-    engine = engines.get(engine_type)
+    module, name = modules[engine_type]
+    engine = getattr(import_module(module), name)()
     if not engine or not engine.available:
         print(f"{engine_type} is not available. Please install it and required dependencies.")
         return {}
@@ -85,7 +83,7 @@ def run_benchmark(engine_type, models, batch_sizes, num_samples, output_tokens, 
         print(f"{'='*60}")
         
         # Initialize power monitor
-        power_monitor = PowerMonitor()
+        # Monitor is created per batch after model warmup.
         
         # Setup model - use local model path
         base_path = os.path.join('/data/huggingface', model)
@@ -148,28 +146,25 @@ def run_benchmark(engine_type, models, batch_sizes, num_samples, output_tokens, 
             print(f"\nBenchmarking batch size: {batch_size}")
             
             # Start power monitoring
-            power_monitor.start_monitoring()
-            
+            power_monitor = PowerMonitor(monitor_mode)
             # Run inference
-            outputs, start_time, end_time = engine.run_benchmark(
-                prompts, num_samples, batch_size, output_tokens
-            )
-            
-            # Collect final power readings
-            print("Inference complete, collecting final power readings...")
-            time.sleep(2.0)
-            
-            # Stop monitoring
-            power_monitor.stop_monitoring()
-            
-            # Calculate metrics
-            duration = end_time - start_time
-            total_output_tokens = engine.estimate_tokens(outputs)
-            
-            # Calculate power and energy metrics with actual number of responses
-            actual_responses = len(outputs)  
-            metrics = power_monitor.calculate_metrics(duration, total_output_tokens, actual_responses)
-            
+            try:
+                power_monitor.start_monitoring()
+                try:
+                    outputs, start_time, end_time = engine.run_benchmark(
+                        prompts, num_samples, batch_size, output_tokens
+                    )
+                finally:
+                    power_monitor.stop_monitoring()
+                duration = end_time - start_time
+                total_output_tokens = engine.estimate_tokens(outputs)
+                metrics = power_monitor.calculate_metrics(
+                    duration, total_output_tokens, len(outputs),
+                    start_time=start_time, end_time=end_time,
+                )
+            finally:
+                power_monitor.close()
+
             # Add model and batch size info
             metrics["model"] = model
             metrics["batch_size"] = batch_size
@@ -202,14 +197,36 @@ def main():
     parser.add_argument("--max-length", type=int, default=300,
                       help="Maximum prompt length in words")
     
+    parser.add_argument("--phase-profiling", action="store_true",
+                        help="vLLM only; route to the maintained serial phase benchmark")
+    parser.add_argument("--monitor", choices=["auto", "gpu_only", "full_node"], default="auto")
     args = parser.parse_args()
+    if args.engine == "vllm":
+        from run_single_node import run
+        for model in args.models.split(","):
+            model = model.strip()
+            candidate = os.path.join('/data/huggingface', model)
+            if os.path.isdir(candidate):
+                model = candidate
+            argv = ["--model", model, "--batch-sizes", args.batch_sizes,
+                    "--num-samples", str(args.num_samples), "--output-tokens", str(args.output_tokens),
+                    "--min-words", str(args.min_length), "--max-words", str(args.max_length),
+                    "--monitor", args.monitor]
+            if args.phase_profiling:
+                argv.append("--phase-profiling")
+            status = run(argv)
+            if status:
+                raise SystemExit(status)
+        return
+    if args.phase_profiling:
+        parser.error("Phase profiling is currently implemented for vLLM only")
     models = [m.strip() for m in args.models.split(",")]
     batch_sizes = [int(b.strip()) for b in args.batch_sizes.split(",")]
   
     prompts = load_alpaca_dataset(min_length=args.min_length, max_length=args.max_length)
     
     # test
-    results = run_benchmark(args.engine, models, batch_sizes, args.num_samples, args.output_tokens, prompts)
+    results = run_benchmark(args.engine, models, batch_sizes, args.num_samples, args.output_tokens, prompts, args.monitor)
     
     # save results
     timestamp = time.strftime("%Y%m%d_%H%M%S")
