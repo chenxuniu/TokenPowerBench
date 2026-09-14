@@ -14,8 +14,9 @@ the corrected phase measurements described here.
 | DRAM energy | A separate Intel RAPL DRAM domain, where exposed | The same sysfs read permissions | Energy of the exposed DRAM domain; not available on every platform |
 | Total node power | `ipmitool dcmi power reading` | Usually root for local IPMI access, or administrator-configured IPMI/BMC access | Total node power reported by that server's BMC |
 
-**没有 root、没有管理员授予的 RAPL/IPMI 读取权限时，只能测 GPU。
-CPU 和整个 node 的功耗应显示为不可用，不能写成 0，也不能把 GPU 功耗称为整机功耗。**
+**Without root or delegated RAPL/IPMI access, only GPU measurements are
+available. Missing CPU/node readings must remain unavailable, never 0; GPU
+power must not be presented as whole-node power.**
 
 RAPL and IPMI are independent capabilities: having access to one does not prove
 access to the other. Root access also does not create a sensor on an unsupported
@@ -116,11 +117,6 @@ time-window experiment. It is not a pure GPU prefill-kernel duration. GPU kernel
 boundaries would require separate engine/profiler instrumentation. Timing and
 power samples use the same monotonic host clock so that wall-clock adjustments
 do not shift the integration windows.
-
-**中文定义：调用 `add_request` 前到主机观测到首 token，是 TTFT，也是本工具的
-prefill proxy 时间窗；首 token 到请求完成是 decode。请求提交返回的时间只作辅助
-记录，因为后台引擎可能在返回前已开始执行。该 prefill 窗口包含提交、排队、调度、
-主机处理和首 token 采样开销，不能解释为纯 GPU kernel 时间。**
 
 Phase mode requests `enable_prefix_caching=False`,
 `enable_chunked_prefill=False`, and `max_num_seqs=1`. The actual installed vLLM

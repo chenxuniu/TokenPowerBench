@@ -7,3 +7,6 @@ __pycache__/
 build/
 dist/
 results/local_*/
+results/smoke-*/
+models/
+validation-gh200/

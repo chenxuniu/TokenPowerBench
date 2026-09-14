@@ -1,19 +1,84 @@
 # TokenPowerBench
 
-Code for **TokenPowerBench: Benchmarking the Power Consumption of LLM Inference**, AAAI 2026. [Paper](https://arxiv.org/abs/2512.03024).
+Code for **TokenPowerBench: Benchmarking the Power Consumption of LLM Inference**, published at **AAAI 2026**.
+
+**Chenxu Niu, Wei Zhang, Jie Li, Yongjian Zhao, Tongyang Wang, Xi Wang, and Yong Chen.**
+
+[AAAI paper](https://ojs.aaai.org/index.php/AAAI/article/view/40535) · [Paper PDF](https://ojs.aaai.org/index.php/AAAI/article/download/40535/44496) · [arXiv](https://arxiv.org/abs/2512.03024) · [Reproduction guide](docs/reproducing.md) · [GH200 validation](docs/gh200-validation.md)
+
+*Proceedings of the AAAI Conference on Artificial Intelligence*, 40(38), 32582–32590. DOI: [10.1609/aaai.v40i38.40535](https://doi.org/10.1609/aaai.v40i38.40535).
 
 The maintained single-node entry point measures inference energy with an explicit sensor scope and saves the exact prompts, configuration, environment, and raw power samples. vLLM supports optional serial first-token phase profiling. Existing batch experiments remain available; they do not claim to separate overlapping prefill/decode activity.
 
-## Install and check access
+## What changed in the maintained single-node workflow
+
+| Area | Current behavior |
+| --- | --- |
+| Runtime identity and permissions | Report UID/EUID and `is_root`; independently probe GPU, IPMI, and Intel RAPL access. Missing sensors produce `null` with a reason. |
+| Prefill/decode boundary | Observe the first generated token ID through incremental vLLM steps; record serial TTFT/prefill and decode host windows. |
+| Energy calculation | Integrate timestamped readings over each actual window; separate IPMI node totals from component measurements and reject insufficiently sampled estimates. |
+| Repeated experiments | Preserve prompts, seed, configuration, runtime, raw traces, and status; support monitor reuse across batch sizes. |
+| Hardware verification | Validate root/non-root behavior and real vLLM inference on GH200; publish the commands, results, and sensor limitations. |
+
+## Quick start: reproduce a single-node run
+
+Use the [complete reproduction guide](docs/reproducing.md) for model preparation, root/IPMI runs, repeated experiments, result inspection, and the relationship to the paper's figures. **On GH200, use the [validated container environment](docs/gh200-validation.md#repeating-the-checks).** The native Python steps below require a compatible Linux NVIDIA GPU environment.
+
+### 1. Get the code and install
 
 Use a Linux NVIDIA GPU host and an isolated Python environment compatible with your chosen vLLM/CUDA release. Install the engine versions used in your experiment; the dependency lower bounds here are **not** a lockfile for the AAAI results.
 
 ```bash
+git clone https://github.com/chenxuniu/TokenPowerBench.git
+cd TokenPowerBench
+
+# Select the reviewed single-node implementation, including while PR #4 is open.
+git fetch origin pull/4/head
+git switch --detach FETCH_HEAD
+
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -e '.[vllm]'
+
+export CUDA_VISIBLE_DEVICES=0
 python run_single_node.py --check-monitor --monitor auto
 ```
+
+### 2. Download the model used in the GH200 smoke tests
+
+This pins the exact model revision used during validation. The checked-in [prompts](examples/prompts.json) are also the inputs used in the small-model tests.
+
+```bash
+python - <<'PY'
+from huggingface_hub import snapshot_download
+
+snapshot_download(
+    repo_id="Qwen/Qwen2.5-0.5B-Instruct",
+    revision="7ae557604adf67be50417f59c2c2f167def9a775",
+    local_dir="models/Qwen2.5-0.5B-Instruct",
+    allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model", "*.jinja"],
+)
+PY
+```
+
+### 3. Run GPU-only prefill/decode profiling
+
+```bash
+python run_single_node.py \
+  --model models/Qwen2.5-0.5B-Instruct \
+  --prompts-file examples/prompts.json \
+  --num-samples 3 --batch-sizes 1 --output-tokens 512 \
+  --max-model-len 4096 --tensor-parallel-size 1 \
+  --gpu-memory-utilization 0.2 --seed 42 --temperature 0 \
+  --phase-profiling --monitor gpu_only \
+  --output-dir results/smoke-phases
+```
+
+For an ordinary batch comparison, omit `--phase-profiling`, use `--num-samples 4 --batch-sizes 1,2`, and choose `--output-dir results/smoke-batches`. The output directory printed by the command contains `status.json`, `results.json`, per-request events, and raw samples. A short prefill should have a timing value and `null` phase energy when sensor resolution is insufficient.
+
+These commands reproduce the **functional benchmark procedure**. Matching the paper's numerical results also requires its hardware and per-experiment model, engine, workload, and sampling settings. The [reproduction guide](docs/reproducing.md#relationship-to-the-aaai-paper) explains the supported experiments and remaining requirements.
+
+## Root permissions and sensor scope
 
 | Measurement | Source | Typical permission | Result when unavailable |
 | --- | --- | --- | --- |
@@ -90,3 +155,22 @@ python -m unittest discover -s tests -v
 ```
 
 Tests cover runtime identity, permission fallback, sensor integration, first-token events, failure cleanup, and result artifacts with mocked hardware. **Real GH200 validation** also exercised non-root/root permissions, Qwen2.5-0.5B/7B-Instruct phase runs, and monitor reuse across batch sizes 1 and 2. See the [commands, observed results, and sensor limitations](docs/gh200-validation.md). The [GH200 Dockerfile](docker/Dockerfile.gh200) uses `nvcr.io/nvidia/vllm:25.09-py3` plus `ipmitool`; container root still needs access to the host IPMI device. These are functional checks, not numerical reproduction of the AAAI figures or validation of exact GPU kernel boundaries. Intel RAPL needs separate testing on an Intel host. See [single-node review findings](docs/review-single-node.md) and the [measurement contract](docs/measurement.md).
+
+## Citation
+
+If you use TokenPowerBench in your research, please cite the [AAAI 2026 paper](https://ojs.aaai.org/index.php/AAAI/article/view/40535):
+
+```bibtex
+@article{niu2026tokenpowerbench,
+  title   = {{TokenPowerBench}: Benchmarking the Power Consumption of {LLM} Inference},
+  author  = {Niu, Chenxu and Zhang, Wei and Li, Jie and Zhao, Yongjian and
+             Wang, Tongyang and Wang, Xi and Chen, Yong},
+  journal = {Proceedings of the AAAI Conference on Artificial Intelligence},
+  volume  = {40},
+  number  = {38},
+  pages   = {32582--32590},
+  year    = {2026},
+  doi     = {10.1609/aaai.v40i38.40535},
+  url     = {https://ojs.aaai.org/index.php/AAAI/article/view/40535}
+}
+```

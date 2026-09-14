@@ -17,6 +17,11 @@ workloads and results do **not** reproduce the paper's figures.
 | vLLM | `0.10.1.1+381074ae.nv25.9.cu130` |
 | Models | Local Qwen2.5-0.5B-Instruct and Qwen2.5-7B-Instruct weights |
 
+The downloaded model metadata records revisions
+`7ae557604adf67be50417f59c2c2f167def9a775` for `Qwen/Qwen2.5-0.5B-Instruct` and
+`a09a35458c702b33eeacc393d103063234e8bc28` for `Qwen/Qwen2.5-7B-Instruct`.
+See [model preparation](reproducing.md) for pinned downloads.
+
 Only the selected GPU is included in GPU energy. IPMI reports the whole node,
 including components beyond that GPU. The node's two-GPU topology therefore
 matters when comparing these scopes.
@@ -193,6 +198,7 @@ test -n "$TPB_USER_HOME" && test -n "$TPB_ROOT_HOME"
 mkdir -p "$TPB_VALIDATION/results" \
   "$TPB_VALIDATION/nonroot-home" "$TPB_VALIDATION/root-home" \
   "$TPB_VALIDATION/cache/nonroot" "$TPB_VALIDATION/cache/root"
+cp "$TPB_VALIDATION/code/examples/prompts.json" "$TPB_VALIDATION/prompts.json"
 
 sudo docker build \
   -f "$TPB_VALIDATION/code/docker/Dockerfile.gh200" \
@@ -261,16 +267,9 @@ The helper mounts only a dedicated empty directory at the passwd-resolved home
 path; it does not mount the host user's actual home. Non-root and root caches
 are kept in separate task directories. No `HOME` environment override is used.
 
-The small-model phase and batch checks used the following two raw inputs.
-Place them in `prompts.json` before invoking the helper. The runner repeats
-them in order to reach `--num-samples`:
-
-```json
-[
-  "Write a detailed technical tutorial of at least 2000 words explaining how autoregressive language models perform inference. Cover attention, KV caching, prefill, decoding, batching, and energy measurement. Continue until the tutorial is complete.",
-  "Write a long, detailed explanation of computer architecture covering memory bandwidth, matrix multiplication, CPU scheduling, and GPU parallelism. Include many concrete examples and continue for at least 2000 words."
-]
-```
+The small-model phase and batch checks used the two raw inputs in
+[`examples/prompts.json`](../examples/prompts.json), copied during setup above.
+The runner repeats them in order to reach `--num-samples`.
 
 ```bash
 tpb_run nonroot \
