@@ -29,7 +29,7 @@ The inference extra targets vLLM 0.10.x. On **GH200/aarch64**, use the
 [container installation and commands](docs/gh200-validation.md#repeating-the-checks).
 
 ```bash
-git clone --branch v1.0.0 https://github.com/chenxuniu/TokenPowerBench.git
+git clone https://github.com/chenxuniu/TokenPowerBench.git
 cd TokenPowerBench
 python -m venv .venv
 source .venv/bin/activate
@@ -106,6 +106,26 @@ Set `CUDA_VISIBLE_DEVICES` before launch. Monitoring maps the visible GPUs to
 NVML UUIDs; `tensor_parallel_size` defaults to their count and must match it
 when specified. Use an otherwise idle, dedicated node for whole-node experiments.
 
+## Configure a multi-node cluster
+
+Use the interactive terminal wizard to enter node IPs or select SLURM discovery:
+
+```bash
+python -m pip install '.[distributed]'
+tpbench-multi --configure-cluster --cluster-config cluster.json
+```
+
+Choose **manual** to enter a head IPv4 address, optional worker addresses, and
+the Ray port. The wizard saves the profile and prints the command to run on each
+node. It does not SSH into nodes or start Ray. Workers join the head; the
+benchmark connects to that one head address.
+
+Choose **SLURM** to discover the head and workers from the job's allocated nodes
+at launch, with an optional network interface and port. A saved SLURM profile
+can be reused across allocations without recording fixed node IPs. Follow the
+[multi-node setup guide](docs/multi-node.md#configure-a-cluster-profile) for
+profile-based launches and commands to inspect allocated nodes.
+
 ## Root permissions and measurement scope
 
 | Measurement | Source | Typical permission | When unavailable |
@@ -118,7 +138,7 @@ when specified. Use an otherwise idle, dedicated node for whole-node experiments
 is never labeled as whole-node energy. IPMI measures the entire node, including
 components and activity outside the selected GPUs.
 
-Every CLI launch reports process UID/EUID and `is_root`. Runs save this identity
+Benchmark launches report process UID/EUID and `is_root`. Runs save this identity
 in `runtime.json` and actual sensor availability in `capabilities.json`.
 Root access alone cannot supply a sensor that the hardware does not expose:
 **the GH200 Grace ARM CPU has no Intel RAPL interface**, so CPU/DRAM RAPL values
@@ -173,9 +193,12 @@ figures. [GH200 validation](docs/gh200-validation.md) records the environment,
 commands, measured results, and hardware limits. Functional checks do not imply
 numerical reproduction of the AAAI figures. Intel RAPL requires an Intel host.
 
-The v1.0 validated inference path is single-node vLLM. Additional engine and
-distributed experiment code is provided in the source repository; it is outside
-the validated Python API scope.
+The v1.0 validated inference path is single-node vLLM. The
+[multi-node guide](docs/multi-node.md) describes the `tpbench-multi` CLI, Ray
+replicas, and SLURM launch commands. Distributed orchestration has local process
+and mocked test coverage; GPU/NCCL execution requires validation on the target
+cluster. Cluster energy and distributed prefill/decode attribution are unavailable.
+The distributed interface is outside the validated single-node Python API scope.
 
 ```bash
 python -m unittest discover -s tests -v
