@@ -1,0 +1,12 @@
+__pycache__/
+.DS_Store
+._*
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+results/local_*/
+results/smoke-*/
+models/
+validation-gh200/

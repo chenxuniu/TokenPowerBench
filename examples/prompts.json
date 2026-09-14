@@ -1,0 +1,4 @@
+[
+  "Write a detailed technical tutorial of at least 2000 words explaining how autoregressive language models perform inference. Cover attention, KV caching, prefill, decoding, batching, and energy measurement. Continue until the tutorial is complete.",
+  "Write a long, detailed explanation of computer architecture covering memory bandwidth, matrix multiplication, CPU scheduling, and GPU parallelism. Include many concrete examples and continue for at least 2000 words."
+]

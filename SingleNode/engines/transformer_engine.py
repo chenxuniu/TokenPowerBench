@@ -171,7 +171,7 @@ class TransformerEngine:
             return [], 0, 0
             
         all_outputs = []
-        start_time = time.time()
+        start_time = time.perf_counter()
         
         # Calculate total prompts needed
         total_needed = num_samples
@@ -192,12 +192,12 @@ class TransformerEngine:
             all_outputs.extend(outputs)
             
             # Print progress
-            elapsed = time.time() - start_time
+            elapsed = time.perf_counter() - start_time
             tokens_so_far = self.estimate_tokens(all_outputs)
             
             print(f"  Sample {i+current_batch_size}/{num_samples}: Generated ~{tokens_so_far} tokens so far ({elapsed:.2f}s elapsed)")
         
-        end_time = time.time()
+        end_time = time.perf_counter()
         return all_outputs, start_time, end_time
     
     def estimate_tokens(self, outputs):

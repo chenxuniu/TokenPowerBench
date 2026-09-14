@@ -1,0 +1,13 @@
+# TokenPowerBench for GH200/aarch64 with the NVIDIA vLLM software stack.
+FROM nvcr.io/nvidia/vllm:25.09-py3
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ipmitool \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /tmp/tokenpowerbench-build
+COPY pyproject.toml README.md run_single_node.py run_multi_node.py ./
+COPY tokenpowerbench ./tokenpowerbench
+RUN python -m pip install --no-deps --no-build-isolation . \
+    && rm -rf /tmp/tokenpowerbench-build
+WORKDIR /results
+ENTRYPOINT ["python", "-m", "tokenpowerbench"]

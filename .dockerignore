@@ -1,0 +1,12 @@
+*
+!pyproject.toml
+!README.md
+!run_single_node.py
+!run_multi_node.py
+!tokenpowerbench/
+!tokenpowerbench/**
+!docker/
+!docker/Dockerfile.gh200
+**/__pycache__/
+**/*.pyc
+**/._*
