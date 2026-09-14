@@ -8,5 +8,7 @@ build/
 dist/
 results/local_*/
 results/smoke-*/
+results/ray-process-smoke/
 models/
+/cluster.json
 validation-gh200/

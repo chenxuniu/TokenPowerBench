@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "mode": "manual",
+  "head_address": "192.0.2.10",
+  "head_port": 6379,
+  "worker_addresses": ["192.0.2.11"],
+  "network_interface": null
+}

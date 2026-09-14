@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "mode": "slurm",
+  "head_address": null,
+  "head_port": 6379,
+  "worker_addresses": [],
+  "network_interface": null
+}

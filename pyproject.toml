@@ -25,7 +25,7 @@ vllm = ["vllm>=0.10.1,<0.11"]
 datasets = ["datasets>=2.0.0"]
 distributed = [
     "vllm>=0.10.1,<0.11",
-    "ray[data]>=2.22.0",
+    "ray[cgraph]>=2.43.0",
     "numpy>=1.24.0",
     "packaging>=21.0",
     "datasets>=2.0.0",
